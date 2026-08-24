@@ -41,6 +41,7 @@ def init_db():
         """)
         if not has_col(conn, "ambulances", "destination_url"):
             conn.execute("ALTER TABLE ambulances ADD COLUMN destination_url TEXT")
+
         conn.execute("""
             CREATE TABLE IF NOT EXISTS history(
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -108,10 +109,10 @@ def board_text():
     for u in units:
         counts[u["status"]] = counts.get(u["status"], 0) + 1
     return (
-        "🚑 *DESPACHO CRUM*\n\n"
-        f"🟢 Disponibles: *{counts['available']}*\n"
-        f"🔴 En servicio: *{counts['service']}*\n"
-        f"🟡 Fuera de servicio: *{counts['offline']}*\n\n"
+        "🚑 DESPACHO CRUM\n\n"
+        f"🟢 Disponibles: {counts['available']}\n"
+        f"🔴 En servicio: {counts['service']}\n"
+        f"🟡 Fuera de servicio: {counts['offline']}\n\n"
         "Selecciona un número económico:"
     )
 
@@ -122,8 +123,10 @@ def board_markup():
         emoji = STATUS[u["status"]][0]
         row.append(InlineKeyboardButton(f"{emoji} {u['unit_code']}", callback_data=f"unit:{u['unit_code']}"))
         if len(row) == 3:
-            rows.append(row); row = []
-    if row: rows.append(row)
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
     rows.append([
         InlineKeyboardButton("🔄 Actualizar", callback_data="board"),
         InlineKeyboardButton("📜 Historial", callback_data="history")
@@ -133,6 +136,7 @@ def board_markup():
 def unit_markup(u):
     rows = []
     code = u["unit_code"]
+
     if u["status"] == "available":
         rows.append([InlineKeyboardButton("🚨 Despachar", callback_data=f"dispatch:{code}")])
         rows.append([InlineKeyboardButton("🟡 Fuera de servicio", callback_data=f"offline:{code}")])
@@ -142,31 +146,33 @@ def unit_markup(u):
         rows.append([InlineKeyboardButton("✅ Finalizar servicio", callback_data=f"available:{code}")])
     else:
         rows.append([InlineKeyboardButton("🟢 Poner disponible", callback_data=f"available:{code}")])
+
     rows.append([InlineKeyboardButton("⬅️ Tablero", callback_data="board")])
     return InlineKeyboardMarkup(rows)
 
 def unit_text(u):
     emoji, label = STATUS[u["status"]]
-    txt = f"🚑 *Unidad {u['unit_code']}*\n\nEstado: {emoji} *{label}*"
+    txt = f"🚑 Unidad {u['unit_code']}\n\nEstado: {emoji} {label}"
     if u["destination_url"]:
-        txt += f"\n\n📍 *Destino registrado*\n{u['destination_url']}"
+        txt += f"\n\n📍 Destino registrado:\n{u['destination_url']}"
     return txt
 
 def history_text():
     with db() as conn:
         rows = conn.execute("SELECT * FROM history ORDER BY id DESC LIMIT 15").fetchall()
     if not rows:
-        return "📜 *Historial*\n\nAún no hay movimientos."
-    out = ["📜 *Últimos movimientos*"]
+        return "📜 Historial\n\nAún no hay movimientos."
+
+    out = ["📜 Últimos movimientos"]
     for r in rows:
-        out.append(f"\n• `{r['unit_code']}` — {r['action']}")
+        out.append(f"\n• {r['unit_code']} — {r['action']}")
         if r["destination_url"]:
             out.append(f"  📍 {r['destination_url']}")
     return "\n".join(out)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("awaiting_destination_for", None)
-    await update.message.reply_text(board_text(), parse_mode="Markdown", reply_markup=board_markup())
+    await update.message.reply_text(board_text(), reply_markup=board_markup())
 
 async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -175,12 +181,12 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "board":
         context.user_data.pop("awaiting_destination_for", None)
-        await q.edit_message_text(board_text(), parse_mode="Markdown", reply_markup=board_markup())
+        await q.edit_message_text(board_text(), reply_markup=board_markup())
         return
 
     if data == "history":
         await q.edit_message_text(
-            history_text(), parse_mode="Markdown",
+            history_text(),
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Tablero", callback_data="board")]])
         )
         return
@@ -192,19 +198,19 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if action == "unit":
-        await q.edit_message_text(unit_text(u), parse_mode="Markdown", reply_markup=unit_markup(u))
+        await q.edit_message_text(unit_text(u), reply_markup=unit_markup(u))
         return
 
     if action == "dispatch":
         if u["status"] != "available":
             await q.edit_message_text("⚠️ La unidad ya no está disponible.", reply_markup=board_markup())
             return
+
         context.user_data["awaiting_destination_for"] = code
         await q.edit_message_text(
-            f"🚨 *Despacho de unidad {code}*\n\n"
-            "Pega ahora el *link de Google Maps* del destino.\n\n"
-            "Ejemplo:\n`https://maps.app.goo.gl/XXXXXXXX`",
-            parse_mode="Markdown",
+            f"🚨 Despacho de unidad {code}\n\n"
+            "Pega ahora el link de Google Maps del destino.\n\n"
+            "Ejemplo:\nhttps://maps.app.goo.gl/XXXXXXXX",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancelar", callback_data="board")]])
         )
         return
@@ -215,19 +221,19 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_status(code, "available", update.effective_user, action="Unidad disponible")
 
     u = get_unit(code)
-    await q.edit_message_text(unit_text(u), parse_mode="Markdown", reply_markup=unit_markup(u))
+    await q.edit_message_text(unit_text(u), reply_markup=unit_markup(u))
 
 async def text_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     code = context.user_data.get("awaiting_destination_for")
     if not code:
         return
+
     text = (update.message.text or "").strip()
 
     if not valid_maps_url(text):
         await update.message.reply_text(
             "⚠️ Necesito un link válido de Google Maps.\n\n"
-            "Ejemplo:\n`https://maps.app.goo.gl/XXXXXXXX`",
-            parse_mode="Markdown"
+            "Ejemplo:\nhttps://maps.app.goo.gl/XXXXXXXX"
         )
         return
 
@@ -241,10 +247,9 @@ async def text_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("awaiting_destination_for", None)
 
     await update.message.reply_text(
-        f"✅ *UNIDAD {code} DESPACHADA*\n\n"
-        "🔴 Estado: *En servicio*\n"
+        f"✅ UNIDAD {code} DESPACHADA\n\n"
+        "🔴 Estado: En servicio\n"
         f"📍 Destino:\n{text}",
-        parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🗺 Abrir destino", url=text)],
             [InlineKeyboardButton("🚑 Volver al tablero", callback_data="board")]
@@ -254,13 +259,16 @@ async def text_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     if not TOKEN:
         raise RuntimeError("Falta TELEGRAM_BOT_TOKEN")
+
     init_db()
+
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ambulancias", start))
     app.add_handler(CallbackQueryHandler(callbacks))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_received))
-    print("Despacho CRUM iniciado")
+
+    print("Despacho CRUM V3 iniciado")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
