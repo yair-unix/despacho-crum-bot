@@ -1,11 +1,19 @@
-# Despacho CRUM — Simple Full States
+# Despacho CRUM — Simple con Bitácora
 
-Versión simple en SQLite. No usa PostgreSQL ni SQLAlchemy.
+Versión simple en SQLite.
+
+## Unidades
+- Ambulancias 674–695
+- Vectores V07, V08 y V15
+
+## Comandos
+- /start
+- /ambulancias
+- /bitacora
+- /bitacora 684
+- /bitacora V07
 
 ## Ambulancias
-674–695
-
-Flujo:
 Disponible → Despachada → En labor
 
 Con traslado:
@@ -15,21 +23,13 @@ Sin traslado:
 En labor → Fin del servicio → Disponible / No disponible
 
 ## Vectores
-- V07
-- V08
-- V15
-
-Flujo:
 Disponible → Despachado → En labor → Fin del servicio → Disponible / No disponible
 
-Los vectores no muestran:
-- En traslado
-- Arribo hospital
-- Salida hospital
-
-## Funciones
-- Link Google Maps al despachar
-- Motivo libre de No disponible
-- Historial básico
-- SQLite
-- Sin SQLAlchemy
+## Bitácora
+Registra:
+- fecha/hora
+- unidad
+- estado
+- motivo de No disponible
+- destino de Google Maps al despacho
+- usuario de Telegram cuando está disponible

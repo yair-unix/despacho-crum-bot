@@ -171,7 +171,6 @@ def change_status(code, new_status, user, reason=None, destination_url=None):
     if new_status == "unavailable":
         new_reason = reason
         new_destination = None
-
     elif new_status == "available":
         new_reason = None
         new_destination = None
@@ -220,7 +219,6 @@ def change_status(code, new_status, user, reason=None, destination_url=None):
 
 def board_text():
     units = get_units()
-
     ambs = [u for u in units if u["unit_type"] == "ambulance"]
     vecs = [u for u in units if u["unit_type"] == "vector"]
 
@@ -250,7 +248,6 @@ def board_markup():
     vecs = [u for u in units if u["unit_type"] == "vector"]
 
     rows = []
-
     rows.append([InlineKeyboardButton("🚑 AMBULANCIAS", callback_data="noop")])
 
     row = []
@@ -264,7 +261,6 @@ def board_markup():
         if len(row) == 3:
             rows.append(row)
             row = []
-
     if row:
         rows.append(row)
 
@@ -278,26 +274,25 @@ def board_markup():
                 callback_data=f"unit:{u['unit_code']}",
             )
         )
-
     if row:
         rows.append(row)
 
     rows.append([
         InlineKeyboardButton("🔄 Actualizar", callback_data="board"),
-        InlineKeyboardButton("📜 Historial", callback_data="history"),
+        InlineKeyboardButton("📜 Bitácora", callback_data="history"),
     ])
 
     return InlineKeyboardMarkup(rows)
 
 
 def unit_text(unit):
-    if unit["unit_type"] == "ambulance":
-        title = f"🚑 Ambulancia {unit['unit_code']}"
-    else:
-        title = f"🏍️ Vector {unit['unit_code']}"
+    title = (
+        f"🚑 Ambulancia {unit['unit_code']}"
+        if unit["unit_type"] == "ambulance"
+        else f"🏍️ Vector {unit['unit_code']}"
+    )
 
     emoji, label = STATUS[unit["status"]]
-
     text = f"{title}\n\nEstado: {emoji} {label}"
 
     if unit["unavailable_reason"]:
@@ -316,20 +311,12 @@ def unit_markup(unit):
     for target in transitions_for(unit).get(unit["status"], []):
         if target == "dispatched":
             rows.append([
-                InlineKeyboardButton(
-                    "🚨 Despachar",
-                    callback_data=f"dispatch:{code}",
-                )
+                InlineKeyboardButton("🚨 Despachar", callback_data=f"dispatch:{code}")
             ])
-
         elif target == "unavailable":
             rows.append([
-                InlineKeyboardButton(
-                    "🟡 No disponible",
-                    callback_data=f"unavailable:{code}",
-                )
+                InlineKeyboardButton("🟡 No disponible", callback_data=f"unavailable:{code}")
             ])
-
         else:
             emoji, label = STATUS[target]
             rows.append([
@@ -341,12 +328,12 @@ def unit_markup(unit):
 
     if unit["destination_url"]:
         rows.append([
-            InlineKeyboardButton(
-                "🗺 Abrir destino",
-                url=unit["destination_url"],
-            )
+            InlineKeyboardButton("🗺 Abrir destino", url=unit["destination_url"])
         ])
 
+    rows.append([
+        InlineKeyboardButton("📜 Bitácora unidad", callback_data=f"unitlog:{code}")
+    ])
     rows.append([
         InlineKeyboardButton("⬅️ Tablero", callback_data="board")
     ])
@@ -354,45 +341,90 @@ def unit_markup(unit):
     return InlineKeyboardMarkup(rows)
 
 
-def history_text():
-    with db() as conn:
-        entries = conn.execute(
-            "SELECT * FROM history ORDER BY id DESC LIMIT 30"
-        ).fetchall()
+def format_entry(e):
+    when = e["created_at"][:19].replace("T", " ")
+    emoji, label = STATUS.get(e["new_status"], ("•", e["new_status"]))
 
-    if not entries:
-        return "📜 HISTORIAL\n\nAún no hay movimientos."
+    who = ""
+    if e["username"]:
+        who = f"@{e['username']}"
+    elif e["user_id"]:
+        who = str(e["user_id"])
 
-    lines = ["📜 ÚLTIMOS MOVIMIENTOS"]
+    lines = [
+        f"{emoji} {e['unit_code']} — {label}",
+        f"🕐 {when} UTC",
+    ]
 
-    for e in entries:
-        when = e["created_at"][:19].replace("T", " ")
-        emoji, label = STATUS.get(
-            e["new_status"],
-            ("•", e["new_status"]),
-        )
+    if e["reason"]:
+        lines.append(f"📝 {e['reason']}")
 
-        lines.append(
-            f"\n{emoji} {e['unit_code']} — {label}\n"
-            f"🕐 {when} UTC"
-        )
+    if e["destination_url"] and e["new_status"] == "dispatched":
+        lines.append(f"📍 {e['destination_url']}")
 
-        if e["reason"]:
-            lines.append(f"📝 {e['reason']}")
-
-        if e["destination_url"] and e["new_status"] == "dispatched":
-            lines.append(f"📍 {e['destination_url']}")
+    if who:
+        lines.append(f"👤 {who}")
 
     return "\n".join(lines)
 
 
+def history_text(limit=30):
+    with db() as conn:
+        entries = conn.execute(
+            "SELECT * FROM history ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+
+    if not entries:
+        return "📜 BITÁCORA\n\nAún no hay movimientos."
+
+    return "📜 BITÁCORA GENERAL\n\n" + "\n\n".join(
+        format_entry(e) for e in entries
+    )
+
+
+def unit_history_text(code, limit=50):
+    with db() as conn:
+        entries = conn.execute(
+            """SELECT * FROM history
+               WHERE unit_code=?
+               ORDER BY id DESC
+               LIMIT ?""",
+            (code, limit),
+        ).fetchall()
+
+    if not entries:
+        return f"📜 BITÁCORA {code}\n\nSin movimientos registrados."
+
+    return f"📜 BITÁCORA {code}\n\n" + "\n\n".join(
+        format_entry(e) for e in reversed(entries)
+    )
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-
     await update.effective_message.reply_text(
         board_text(),
         reply_markup=board_markup(),
     )
+
+
+async def bitacora(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.args:
+        code = context.args[0].upper().strip()
+
+        if not get_unit(code):
+            await update.effective_message.reply_text(
+                "⚠️ Unidad no encontrada.\n\n"
+                "Ejemplos:\n/bitacora 684\n/bitacora V07"
+            )
+            return
+
+        text = unit_history_text(code)
+    else:
+        text = history_text()
+
+    await update.effective_message.reply_text(text)
 
 
 async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -406,7 +438,6 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "board":
         context.user_data.clear()
-
         await q.edit_message_text(
             board_text(),
             reply_markup=board_markup(),
@@ -418,6 +449,16 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             history_text(),
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("⬅️ Tablero", callback_data="board")]
+            ]),
+        )
+        return
+
+    if data.startswith("unitlog:"):
+        code = data.split(":", 1)[1]
+        await q.edit_message_text(
+            unit_history_text(code),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬅️ Unidad", callback_data=f"unit:{code}")]
             ]),
         )
         return
@@ -434,7 +475,6 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith("dispatch:"):
         code = data.split(":", 1)[1]
-
         context.user_data.clear()
         context.user_data["awaiting"] = "destination"
         context.user_data["unit"] = code
@@ -443,17 +483,13 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🚨 Despacho de {code}\n\n"
             "Pega el link de Google Maps del destino.",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(
-                    "❌ Cancelar",
-                    callback_data=f"unit:{code}",
-                )]
+                [InlineKeyboardButton("❌ Cancelar", callback_data=f"unit:{code}")]
             ]),
         )
         return
 
     if data.startswith("unavailable:"):
         code = data.split(":", 1)[1]
-
         context.user_data.clear()
         context.user_data["awaiting"] = "reason"
         context.user_data["unit"] = code
@@ -462,10 +498,7 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🟡 {code}\n\n"
             "Escribe el motivo por el que no está disponible.",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(
-                    "❌ Cancelar",
-                    callback_data=f"unit:{code}",
-                )]
+                [InlineKeyboardButton("❌ Cancelar", callback_data=f"unit:{code}")]
             ]),
         )
         return
@@ -517,9 +550,7 @@ async def text_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.clear()
 
         if not ok:
-            await update.effective_message.reply_text(
-                f"⚠️ {err}"
-            )
+            await update.effective_message.reply_text(f"⚠️ {err}")
             return
 
         unit = get_unit(code)
@@ -541,9 +572,7 @@ async def text_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.clear()
 
         if not ok:
-            await update.effective_message.reply_text(
-                f"⚠️ {err}"
-            )
+            await update.effective_message.reply_text(f"⚠️ {err}")
             return
 
         unit = get_unit(code)
@@ -564,6 +593,7 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ambulancias", start))
+    app.add_handler(CommandHandler("bitacora", bitacora))
     app.add_handler(CallbackQueryHandler(callbacks))
     app.add_handler(
         MessageHandler(
@@ -572,7 +602,7 @@ def main():
         )
     )
 
-    print("Despacho CRUM Simple Full States iniciado")
+    print("Despacho CRUM Simple con Bitácora iniciado")
 
     app.run_polling(
         allowed_updates=Update.ALL_TYPES
