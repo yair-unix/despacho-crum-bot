@@ -1,17 +1,19 @@
-# Despacho CRUM — Simple con Bitácora
+# Despacho CRUM — Simple Persistente
 
-Versión simple en SQLite.
+Versión simple SQLite diseñada para uso compartido en grupos de Telegram.
+
+## Comportamiento de mensajes
+
+- El tablero permanece visible.
+- Seleccionar una unidad crea una tarjeta nueva.
+- Despachar crea una tarjeta operativa persistente.
+- La tarjeta de la unidad conserva sus botones para que otro integrante continúe el flujo.
+- "Ver tablero" crea un tablero nuevo y no modifica la tarjeta operativa.
+- Consultar la bitácora crea un mensaje nuevo y no elimina botones ni tarjetas.
 
 ## Unidades
-- Ambulancias 674–695
-- Vectores V07, V08 y V15
-
-## Comandos
-- /start
-- /ambulancias
-- /bitacora
-- /bitacora 684
-- /bitacora V07
+Ambulancias 674–695
+Vectores V07, V08 y V15
 
 ## Ambulancias
 Disponible → Despachada → En labor
@@ -26,10 +28,6 @@ En labor → Fin del servicio → Disponible / No disponible
 Disponible → Despachado → En labor → Fin del servicio → Disponible / No disponible
 
 ## Bitácora
-Registra:
-- fecha/hora
-- unidad
-- estado
-- motivo de No disponible
-- destino de Google Maps al despacho
-- usuario de Telegram cuando está disponible
+/bitacora
+/bitacora 684
+/bitacora V07

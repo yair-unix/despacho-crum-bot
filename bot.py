@@ -160,7 +160,7 @@ def change_status(code, new_status, user, reason=None, destination_url=None):
 
     allowed = transitions_for(unit).get(unit["status"], [])
     if new_status not in allowed:
-        return False, "Ese cambio de estado no está permitido."
+        return False, "Ese cambio de estado ya no está disponible."
 
     old_status = unit["status"]
     old_destination = unit["destination_url"]
@@ -255,7 +255,7 @@ def board_markup():
         row.append(
             InlineKeyboardButton(
                 f"{STATUS[u['status']][0]} {u['unit_code']}",
-                callback_data=f"unit:{u['unit_code']}",
+                callback_data=f"openunit:{u['unit_code']}",
             )
         )
         if len(row) == 3:
@@ -271,15 +271,15 @@ def board_markup():
         row.append(
             InlineKeyboardButton(
                 f"{STATUS[u['status']][0]} {u['unit_code']}",
-                callback_data=f"unit:{u['unit_code']}",
+                callback_data=f"openunit:{u['unit_code']}",
             )
         )
     if row:
         rows.append(row)
 
     rows.append([
-        InlineKeyboardButton("🔄 Actualizar", callback_data="board"),
-        InlineKeyboardButton("📜 Bitácora", callback_data="history"),
+        InlineKeyboardButton("🔄 Actualizar este tablero", callback_data="refreshboard"),
+        InlineKeyboardButton("📜 Bitácora", callback_data="generalhistory"),
     ])
 
     return InlineKeyboardMarkup(rows)
@@ -335,7 +335,7 @@ def unit_markup(unit):
         InlineKeyboardButton("📜 Bitácora unidad", callback_data=f"unitlog:{code}")
     ])
     rows.append([
-        InlineKeyboardButton("⬅️ Tablero", callback_data="board")
+        InlineKeyboardButton("🚑 Ver tablero", callback_data="newboard")
     ])
 
     return InlineKeyboardMarkup(rows)
@@ -401,12 +401,16 @@ def unit_history_text(code, limit=50):
     )
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data.clear()
-    await update.effective_message.reply_text(
+async def send_board(message):
+    await message.reply_text(
         board_text(),
         reply_markup=board_markup(),
     )
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear()
+    await send_board(update.effective_message)
 
 
 async def bitacora(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -430,47 +434,47 @@ async def bitacora(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
-
     data = q.data
 
     if data == "noop":
         return
 
-    if data == "board":
-        context.user_data.clear()
+    # Sólo este botón actualiza el tablero que fue pulsado.
+    if data == "refreshboard":
         await q.edit_message_text(
             board_text(),
             reply_markup=board_markup(),
         )
         return
 
-    if data == "history":
-        await q.edit_message_text(
-            history_text(),
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("⬅️ Tablero", callback_data="board")]
-            ]),
+    # Crea un tablero NUEVO; nunca destruye la tarjeta de la unidad.
+    if data == "newboard":
+        await q.message.reply_text(
+            board_text(),
+            reply_markup=board_markup(),
         )
         return
 
-    if data.startswith("unitlog:"):
-        code = data.split(":", 1)[1]
-        await q.edit_message_text(
-            unit_history_text(code),
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("⬅️ Unidad", callback_data=f"unit:{code}")]
-            ]),
-        )
-        return
-
-    if data.startswith("unit:"):
+    # Seleccionar una unidad desde el tablero crea una tarjeta NUEVA.
+    if data.startswith("openunit:"):
         code = data.split(":", 1)[1]
         unit = get_unit(code)
 
-        await q.edit_message_text(
+        await q.message.reply_text(
             unit_text(unit),
             reply_markup=unit_markup(unit),
         )
+        return
+
+    # La bitácora general se publica aparte y no sustituye el tablero.
+    if data == "generalhistory":
+        await q.message.reply_text(history_text())
+        return
+
+    # La bitácora individual se publica aparte y no sustituye la tarjeta operativa.
+    if data.startswith("unitlog:"):
+        code = data.split(":", 1)[1]
+        await q.message.reply_text(unit_history_text(code))
         return
 
     if data.startswith("dispatch:"):
@@ -479,12 +483,10 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["awaiting"] = "destination"
         context.user_data["unit"] = code
 
-        await q.edit_message_text(
+        # Esta pregunta es un mensaje nuevo. La tarjeta original queda visible.
+        await q.message.reply_text(
             f"🚨 Despacho de {code}\n\n"
-            "Pega el link de Google Maps del destino.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("❌ Cancelar", callback_data=f"unit:{code}")]
-            ]),
+            "Pega el link de Google Maps del destino."
         )
         return
 
@@ -494,15 +496,13 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["awaiting"] = "reason"
         context.user_data["unit"] = code
 
-        await q.edit_message_text(
+        await q.message.reply_text(
             f"🟡 {code}\n\n"
-            "Escribe el motivo por el que no está disponible.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("❌ Cancelar", callback_data=f"unit:{code}")]
-            ]),
+            "Escribe el motivo por el que no está disponible."
         )
         return
 
+    # Los cambios operativos SÍ actualizan la tarjeta que contiene los botones.
     if data.startswith("status:"):
         _, code, new_status = data.split(":", 2)
 
@@ -522,6 +522,7 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             unit_text(unit),
             reply_markup=unit_markup(unit),
         )
+        return
 
 
 async def text_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -555,8 +556,10 @@ async def text_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         unit = get_unit(code)
 
+        # Se crea una TARJETA OPERATIVA nueva y persistente.
         await update.effective_message.reply_text(
-            f"✅ {code} despachado.\n\n📍 {text}",
+            f"✅ {code} despachado.\n\n"
+            f"{unit_text(unit)}",
             reply_markup=unit_markup(unit),
         )
         return
@@ -602,11 +605,8 @@ def main():
         )
     )
 
-    print("Despacho CRUM Simple con Bitácora iniciado")
-
-    app.run_polling(
-        allowed_updates=Update.ALL_TYPES
-    )
+    print("Despacho CRUM Simple Persistente iniciado")
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":
