@@ -1,18 +1,35 @@
-# Despacho CRUM — versión simple con vectores
+# Despacho CRUM — Simple Full States
 
-Incluye:
+Versión simple en SQLite. No usa PostgreSQL ni SQLAlchemy.
 
-- Ambulancias 674–695
-- Vectores operativos actuales:
-  - V07
-  - V08
-  - V15
+## Ambulancias
+674–695
 
-Estados:
-- 🟢 Disponible
-- 🟡 No disponible + motivo libre
-- 🚨 Despachado + link Google Maps
-- 🔴 En labor
-- ✅ Fin del servicio
+Flujo:
+Disponible → Despachada → En labor
 
-Esta versión conserva SQLite y está pensada como bot simple/de respaldo.
+Con traslado:
+En labor → En traslado → Arribo hospital → Salida hospital → Disponible / No disponible
+
+Sin traslado:
+En labor → Fin del servicio → Disponible / No disponible
+
+## Vectores
+- V07
+- V08
+- V15
+
+Flujo:
+Disponible → Despachado → En labor → Fin del servicio → Disponible / No disponible
+
+Los vectores no muestran:
+- En traslado
+- Arribo hospital
+- Salida hospital
+
+## Funciones
+- Link Google Maps al despachar
+- Motivo libre de No disponible
+- Historial básico
+- SQLite
+- Sin SQLAlchemy
