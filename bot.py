@@ -127,11 +127,7 @@ def get_unit(code):
 
 
 def transitions_for(unit):
-    return (
-        AMBULANCE_TRANSITIONS
-        if unit["unit_type"] == "ambulance"
-        else VECTOR_TRANSITIONS
-    )
+    return AMBULANCE_TRANSITIONS if unit["unit_type"] == "ambulance" else VECTOR_TRANSITIONS
 
 
 def valid_maps_url(text):
@@ -145,8 +141,7 @@ def valid_maps_url(text):
                 "google.com",
                 "www.google.com",
                 "maps.google.com",
-            }
-            or host.endswith(".google.com")
+            } or host.endswith(".google.com")
         )
     except Exception:
         return False
@@ -215,6 +210,29 @@ def change_status(code, new_status, user, reason=None, destination_url=None):
         )
 
     return True, None
+
+
+def clear_history():
+    with db() as conn:
+        conn.execute("DELETE FROM history")
+        conn.commit()
+
+
+def reset_all_units():
+    now = datetime.now(timezone.utc).isoformat()
+
+    with db() as conn:
+        conn.execute("DELETE FROM history")
+        conn.execute(
+            """UPDATE units
+               SET status='available',
+                   unavailable_reason=NULL,
+                   destination_url=NULL,
+                   updated_at=?,
+                   updated_by=NULL""",
+            (now,),
+        )
+        conn.commit()
 
 
 def board_text():
@@ -378,9 +396,7 @@ def history_text(limit=30):
     if not entries:
         return "📜 BITÁCORA\n\nAún no hay movimientos."
 
-    return "📜 BITÁCORA GENERAL\n\n" + "\n\n".join(
-        format_entry(e) for e in entries
-    )
+    return "📜 BITÁCORA GENERAL\n\n" + "\n\n".join(format_entry(e) for e in entries)
 
 
 def unit_history_text(code, limit=50):
@@ -431,6 +447,35 @@ async def bitacora(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text(text)
 
 
+async def borrarbitacora(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.effective_message.reply_text(
+        "⚠️ BORRAR BITÁCORA\n\n"
+        "Esto eliminará todos los registros históricos.\n"
+        "NO cambiará los estados actuales de las unidades.\n\n"
+        "¿Confirmas?",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Sí, borrar bitácora", callback_data="confirm_clear_history")],
+            [InlineKeyboardButton("❌ Cancelar", callback_data="cancel_action")],
+        ]),
+    )
+
+
+async def reiniciar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.effective_message.reply_text(
+        "⚠️ REINICIAR SISTEMA SIMPLE\n\n"
+        "Esto hará lo siguiente:\n"
+        "• Borrará toda la bitácora\n"
+        "• Pondrá todas las ambulancias y vectores en 🟢 Disponible\n"
+        "• Limpiará destinos activos\n"
+        "• Limpiará motivos de No disponible\n\n"
+        "¿Confirmas?",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Sí, reiniciar todo", callback_data="confirm_reset_all")],
+            [InlineKeyboardButton("❌ Cancelar", callback_data="cancel_action")],
+        ]),
+    )
+
+
 async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -439,7 +484,30 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "noop":
         return
 
-    # Sólo este botón actualiza el tablero que fue pulsado.
+    if data == "cancel_action":
+        await q.edit_message_text("❌ Operación cancelada.")
+        return
+
+    if data == "confirm_clear_history":
+        clear_history()
+        await q.edit_message_text(
+            "✅ Bitácora borrada.\n\n"
+            "Los estados actuales de las unidades se conservaron."
+        )
+        return
+
+    if data == "confirm_reset_all":
+        reset_all_units()
+        context.user_data.clear()
+        await q.edit_message_text(
+            "✅ Sistema reiniciado.\n\n"
+            "Todas las unidades quedaron 🟢 Disponibles y la bitácora fue eliminada.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🚑 Ver tablero", callback_data="newboard")]
+            ]),
+        )
+        return
+
     if data == "refreshboard":
         await q.edit_message_text(
             board_text(),
@@ -447,7 +515,6 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Crea un tablero NUEVO; nunca destruye la tarjeta de la unidad.
     if data == "newboard":
         await q.message.reply_text(
             board_text(),
@@ -455,7 +522,6 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Seleccionar una unidad desde el tablero crea una tarjeta NUEVA.
     if data.startswith("openunit:"):
         code = data.split(":", 1)[1]
         unit = get_unit(code)
@@ -466,12 +532,10 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # La bitácora general se publica aparte y no sustituye el tablero.
     if data == "generalhistory":
         await q.message.reply_text(history_text())
         return
 
-    # La bitácora individual se publica aparte y no sustituye la tarjeta operativa.
     if data.startswith("unitlog:"):
         code = data.split(":", 1)[1]
         await q.message.reply_text(unit_history_text(code))
@@ -483,7 +547,6 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["awaiting"] = "destination"
         context.user_data["unit"] = code
 
-        # Esta pregunta es un mensaje nuevo. La tarjeta original queda visible.
         await q.message.reply_text(
             f"🚨 Despacho de {code}\n\n"
             "Pega el link de Google Maps del destino."
@@ -502,7 +565,6 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Los cambios operativos SÍ actualizan la tarjeta que contiene los botones.
     if data.startswith("status:"):
         _, code, new_status = data.split(":", 2)
 
@@ -556,10 +618,8 @@ async def text_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         unit = get_unit(code)
 
-        # Se crea una TARJETA OPERATIVA nueva y persistente.
         await update.effective_message.reply_text(
-            f"✅ {code} despachado.\n\n"
-            f"{unit_text(unit)}",
+            f"✅ {code} despachado.\n\n{unit_text(unit)}",
             reply_markup=unit_markup(unit),
         )
         return
@@ -597,6 +657,8 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ambulancias", start))
     app.add_handler(CommandHandler("bitacora", bitacora))
+    app.add_handler(CommandHandler("borrarbitacora", borrarbitacora))
+    app.add_handler(CommandHandler("reiniciar", reiniciar))
     app.add_handler(CallbackQueryHandler(callbacks))
     app.add_handler(
         MessageHandler(
@@ -605,7 +667,7 @@ def main():
         )
     )
 
-    print("Despacho CRUM Simple Persistente iniciado")
+    print("Despacho CRUM Simple Persistente + Reset iniciado")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
