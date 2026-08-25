@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.error import BadRequest
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -568,6 +569,22 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("status:"):
         _, code, new_status = data.split(":", 2)
 
+        # Validar siempre contra el estado REAL guardado en SQLite.
+        current = get_unit(code)
+        if not current:
+            await q.message.reply_text("⚠️ Unidad no encontrada.")
+            return
+
+        allowed = transitions_for(current).get(current["status"], [])
+        if new_status not in allowed:
+            # La tarjeta quedó desactualizada. En lugar de dejar el botón muerto,
+            # mostramos una tarjeta nueva con el estado real actual.
+            await q.message.reply_text(
+                "🔄 Esta tarjeta estaba desactualizada. Estado actual:\n\n" + unit_text(current),
+                reply_markup=unit_markup(current),
+            )
+            return
+
         ok, err = change_status(
             code,
             new_status,
@@ -575,15 +592,26 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         if not ok:
-            await q.answer(err, show_alert=True)
+            current = get_unit(code)
+            await q.message.reply_text(
+                "⚠️ No se pudo aplicar el cambio. Estado actual:\n\n" + unit_text(current),
+                reply_markup=unit_markup(current),
+            )
             return
 
         unit = get_unit(code)
 
-        await q.edit_message_text(
-            unit_text(unit),
-            reply_markup=unit_markup(unit),
-        )
+        try:
+            await q.edit_message_text(
+                unit_text(unit),
+                reply_markup=unit_markup(unit),
+            )
+        except BadRequest:
+            # Si Telegram ya no permite editar esa tarjeta, publicar una nueva.
+            await q.message.reply_text(
+                unit_text(unit),
+                reply_markup=unit_markup(unit),
+            )
         return
 
 
