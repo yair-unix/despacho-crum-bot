@@ -9,3 +9,7 @@ Corrección de botones de estado y tarjetas desactualizadas.
 - Corrige el flujo En traslado → Arribo hospital incluso después de esperar tiempo.
 - Conserva /bitacora, /borrarbitacora y /reiniciar.
 - Ambulancias 674–695 y vectores V07, V08 y V15.
+
+
+## Horario
+La bitácora se guarda internamente en UTC y se muestra en horario de Ciudad de México mediante `America/Mexico_City`.

@@ -1,6 +1,7 @@
 import os
 import sqlite3
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -20,6 +21,7 @@ load_dotenv()
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 DB_PATH = Path(__file__).with_name("despacho_crum_simple.db")
+MEXICO_TZ = ZoneInfo("America/Mexico_City")
 
 AMBULANCES = [str(n) for n in range(674, 696)]
 VECTORS = ["V07", "V08", "V15"]
@@ -361,7 +363,16 @@ def unit_markup(unit):
 
 
 def format_entry(e):
-    when = e["created_at"][:19].replace("T", " ")
+    raw = e["created_at"]
+    try:
+        dt = datetime.fromisoformat(raw)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        local_dt = dt.astimezone(MEXICO_TZ)
+        when = local_dt.strftime("%d/%m/%Y %H:%M:%S")
+    except Exception:
+        when = raw[:19].replace("T", " ")
+
     emoji, label = STATUS.get(e["new_status"], ("•", e["new_status"]))
 
     who = ""
@@ -372,7 +383,7 @@ def format_entry(e):
 
     lines = [
         f"{emoji} {e['unit_code']} — {label}",
-        f"🕐 {when} UTC",
+        f"🕐 {when} — Hora CDMX",
     ]
 
     if e["reason"]:
