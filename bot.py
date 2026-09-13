@@ -23,8 +23,8 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 DB_PATH = Path(__file__).with_name("despacho_crum_simple.db")
 MEXICO_TZ = ZoneInfo("America/Mexico_City")
 
-AMBULANCES = [str(n) for n in range(674, 696)]
-VECTORS = ["V07", "V08", "V15"]
+AMBULANCES = [str(n) for n in range(674, 700)]
+VECTORS = ["V07", "V08", "V10", "V15"]
 
 STATUS = {
     "available": ("🟢", "Disponible"),

@@ -8,7 +8,7 @@ Corrección de botones de estado y tarjetas desactualizadas.
 - Si Telegram ya no permite editar una tarjeta antigua, el bot publica una nueva en lugar de fallar.
 - Corrige el flujo En traslado → Arribo hospital incluso después de esperar tiempo.
 - Conserva /bitacora, /borrarbitacora y /reiniciar.
-- Ambulancias 674–695 y vectores V07, V08 y V15.
+- Ambulancias 674–699 y vectores V07, V08, V10 y V15.
 
 
 ## Horario
